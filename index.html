@@ -14,6 +14,11 @@
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
+  <div id="app-bg" aria-hidden="true">
+    <div class="bg-layer" id="bg-layer-a"></div>
+    <div class="bg-layer" id="bg-layer-b"></div>
+  </div>
+
   <div id="signed-out">
     <h1>Backlog</h1>
     <p>Your personal game library, notes, and backlog — synced across every device.</p>
@@ -169,6 +174,7 @@
                 <th>Status</th>
                 <th>Rating</th>
                 <th>Tags</th>
+                <th></th>
               </tr>
             </thead>
             <tbody id="game-table-body"></tbody>
