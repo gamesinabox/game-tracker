@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Backlog</title>
+  <meta name="theme-color" content="#0f1115" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="manifest" href="manifest.webmanifest" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
@@ -36,8 +40,19 @@
       <button class="tab-btn" data-tab="library">Library</button>
     </nav>
 
-    <div class="loading-banner" id="loading-banner">
-      <span class="spinner"></span> Loading your library…
+    <div class="skeleton-view" id="loading-skeleton">
+      <div class="stat-grid">
+        <div class="skel skel-tile"></div>
+        <div class="skel skel-tile"></div>
+        <div class="skel skel-tile"></div>
+        <div class="skel skel-tile"></div>
+      </div>
+      <div class="skel skel-row"></div>
+      <div class="spotlight-row">
+        <div class="skel skel-card"></div>
+        <div class="skel skel-card"></div>
+        <div class="skel skel-card"></div>
+      </div>
     </div>
 
     <main>
@@ -53,20 +68,29 @@
           <div class="heatmap-wrap">
             <div class="heatmap" id="heatmap"></div>
           </div>
-          <p class="empty-hint" id="heatmap-empty" hidden>Log a session to start filling this in.</p>
+          <div class="heatmap-legend">
+            <span>Less</span>
+            <span class="heatmap-day" data-level="0"></span>
+            <span class="heatmap-day" data-level="1"></span>
+            <span class="heatmap-day" data-level="2"></span>
+            <span class="heatmap-day" data-level="3"></span>
+            <span class="heatmap-day" data-level="4"></span>
+            <span>More</span>
+          </div>
+          <p class="empty-hint" id="heatmap-empty" hidden><span class="empty-icon">📈</span>Log a session to start filling this in.</p>
         </section>
 
         <section>
           <h2>Currently playing</h2>
           <div class="spotlight-row" id="spotlight-row"></div>
-          <p class="empty-hint" id="spotlight-empty" hidden>Nothing marked "Playing" right now.</p>
+          <p class="empty-hint" id="spotlight-empty" hidden><span class="empty-icon">🎮</span>Nothing marked "Playing" right now.</p>
         </section>
 
         <section>
           <h2>What should I play next?</h2>
           <div class="picker-box">
             <div class="picker-result" id="picker-result">
-              <span class="empty-hint">Pick a random game from your backlog.</span>
+              <span class="empty-hint"><span class="empty-icon">🎲</span>Pick a random game from your backlog.</span>
             </div>
             <button class="btn btn-primary" id="picker-btn">Roll the dice</button>
           </div>
@@ -74,6 +98,8 @@
 
         <section>
           <div class="toolbar">
+            <button class="btn" id="year-review-btn">📅 Year in review</button>
+            <button class="btn" id="steam-import-btn">🎮 Import from Steam</button>
             <button class="btn" id="export-btn">Export JSON</button>
             <button class="btn" id="import-btn">Import JSON</button>
             <input type="file" id="import-file" accept="application/json" hidden />
@@ -106,10 +132,49 @@
             <option value="title-asc">Title A–Z</option>
             <option value="priority-asc">Backlog priority</option>
           </select>
+          <div class="view-toggle">
+            <button class="btn icon-btn active" id="view-grid-btn" title="Grid view" aria-label="Grid view">▦</button>
+            <button class="btn icon-btn" id="view-list-btn" title="List view" aria-label="List view">☰</button>
+          </div>
+          <button class="btn" id="select-mode-btn">Select</button>
         </div>
         <p class="reorder-hint" id="reorder-hint" hidden>Drag cards to reorder your backlog priority.</p>
+
+        <div class="bulk-bar" id="bulk-bar" hidden>
+          <span id="bulk-count">0 selected</span>
+          <div class="bulk-actions">
+            <select id="bulk-status">
+              <option value="">Set status…</option>
+              <option value="backlog">Backlog</option>
+              <option value="playing">Playing</option>
+              <option value="completed">Completed</option>
+              <option value="dropped">Dropped</option>
+              <option value="shelved">Shelved</option>
+            </select>
+            <input type="text" id="bulk-tag" placeholder="Add tag…" style="width:100px" />
+            <button class="btn" id="bulk-tag-btn">Add tag</button>
+            <button class="btn btn-danger" id="bulk-delete-btn">Delete</button>
+          </div>
+        </div>
+
         <div class="game-grid" id="game-grid"></div>
-        <p class="empty-hint" id="library-empty" hidden>No games match these filters yet.</p>
+        <div class="game-table-wrap" id="game-table-wrap" hidden>
+          <table class="game-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th></th>
+                <th>Title</th>
+                <th>Platform</th>
+                <th>Status</th>
+                <th>Rating</th>
+                <th>Tags</th>
+              </tr>
+            </thead>
+            <tbody id="game-table-body"></tbody>
+          </table>
+        </div>
+        <p class="empty-hint" id="library-empty" hidden><span class="empty-icon">🗂️</span>No games match these filters yet.</p>
       </section>
     </main>
   </div>
@@ -170,9 +235,15 @@
         <input type="text" id="game-tags" placeholder="cozy, roguelike, co-op" />
       </div>
 
-      <div class="field">
-        <label for="game-priority">Backlog priority (lower = play sooner)</label>
-        <input type="number" id="game-priority" step="1" />
+      <div class="field-row">
+        <div class="field">
+          <label for="game-priority">Backlog priority (lower = play sooner)</label>
+          <input type="number" id="game-priority" step="1" />
+        </div>
+        <div class="field">
+          <label for="game-est-hours">Estimated length (hours)</label>
+          <input type="number" id="game-est-hours" min="0" step="0.5" placeholder="e.g. 15" />
+        </div>
       </div>
 
       <div class="modal-actions">
@@ -203,6 +274,15 @@
       <button class="btn" id="detail-edit-btn">Edit details</button>
 
       <div class="subsection">
+        <h3>Completion</h3>
+        <div class="checklist" id="detail-checklist">
+          <label><input type="checkbox" data-key="story" /> Beat the main story</label>
+          <label><input type="checkbox" data-key="hundred" /> 100% completed</label>
+          <label><input type="checkbox" data-key="achievements" /> All achievements</label>
+        </div>
+      </div>
+
+      <div class="subsection">
         <h3>Session log</h3>
         <div id="detail-sessions"></div>
         <div class="log-add-row">
@@ -222,6 +302,46 @@
           <button class="btn" id="memory-add-btn">Save</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ---------------- Steam import modal ---------------- -->
+  <div class="modal-backdrop" id="steam-modal-backdrop" hidden>
+    <div class="modal">
+      <button class="modal-close" id="steam-modal-close">&times;</button>
+      <h2>Import from Steam</h2>
+      <p class="hint">
+        Steam's API can't be called directly from a page like this one, so it's a two-step copy/paste:
+      </p>
+      <ol class="steam-steps">
+        <li>Get a free key at <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener">steamcommunity.com/dev/apikey</a>, and make sure your Steam profile's game details are set to <strong>Public</strong> (Steam → Edit Profile → Privacy Settings).</li>
+        <li>Find your SteamID64 (e.g. via <a href="https://steamid.io/" target="_blank" rel="noopener">steamid.io</a>).</li>
+        <li>Open this URL in a new tab, with your key and ID filled in:
+          <code id="steam-url-template">https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=YOUR_KEY&amp;steamid=YOUR_STEAMID&amp;format=json&amp;include_appinfo=1</code>
+        </li>
+        <li>Copy the entire JSON response and paste it below.</li>
+      </ol>
+      <div class="field">
+        <label for="steam-paste">Pasted Steam JSON</label>
+        <textarea id="steam-paste" rows="6" placeholder='{"response":{"games":[...]}}'></textarea>
+      </div>
+      <p class="hint">New games are added to your backlog with platform "PC". Games with tracked playtime get one imported session so your hours aren't lost. Games already in your library (matched by Steam app ID) are skipped.</p>
+      <div class="modal-actions">
+        <div></div>
+        <div class="right">
+          <button class="btn" id="steam-cancel-btn">Cancel</button>
+          <button class="btn btn-primary" id="steam-import-confirm-btn">Import</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------------- Year in review modal ---------------- -->
+  <div class="modal-backdrop" id="year-modal-backdrop" hidden>
+    <div class="modal">
+      <button class="modal-close" id="year-modal-close">&times;</button>
+      <h2 id="year-modal-title">Year in review</h2>
+      <div id="year-review-body"></div>
     </div>
   </div>
 

@@ -1,5 +1,6 @@
 import { auth, watchAuth, signIn, signOutUser, watchGames, saveGame, deleteGame } from "./firebase.js";
 import { searchGames, rawgConfigured } from "./rawg.js";
+import { parseSteamLibrary } from "./steam.js";
 
 // ---------------------------------------------------------------------------
 // State
@@ -12,8 +13,10 @@ let activeTab = "dashboard";
 let editingGameId = null; // null = add mode
 let editingRawgPick = null; // metadata picked from RAWG search, merged on save
 let detailGameId = null;
+let selectMode = false;
+const selectedIds = new Set();
 
-const filters = { search: "", status: "all", platform: "all", tag: "all", sort: "added-desc" };
+const filters = { search: "", status: "all", platform: "all", tag: "all", sort: "added-desc", view: "grid" };
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -33,10 +36,12 @@ const heatmapEmpty = $("heatmap-empty");
 const spotlightRow = $("spotlight-row");
 const spotlightEmpty = $("spotlight-empty");
 const pickerResult = $("picker-result");
-const loadingBanner = $("loading-banner");
+const loadingSkeleton = $("loading-skeleton");
 const themeToggleBtn = $("theme-toggle");
 
 const gameGrid = $("game-grid");
+const gameTableWrap = $("game-table-wrap");
+const gameTableBody = $("game-table-body");
 const libraryEmpty = $("library-empty");
 const reorderHint = $("reorder-hint");
 const filterSearch = $("filter-search");
@@ -44,6 +49,15 @@ const filterStatus = $("filter-status");
 const filterPlatform = $("filter-platform");
 const filterTag = $("filter-tag");
 const filterSort = $("filter-sort");
+const viewGridBtn = $("view-grid-btn");
+const viewListBtn = $("view-list-btn");
+const selectModeBtn = $("select-mode-btn");
+const bulkBar = $("bulk-bar");
+const bulkCount = $("bulk-count");
+const bulkStatusSelect = $("bulk-status");
+const bulkTagInput = $("bulk-tag");
+const bulkTagBtn = $("bulk-tag-btn");
+const bulkDeleteBtn = $("bulk-delete-btn");
 
 const editBackdrop = $("edit-modal-backdrop");
 const editTitleEl = $("edit-modal-title");
@@ -56,6 +70,7 @@ const gamePriceInput = $("game-price");
 const gameAcquisitionInput = $("game-acquisition");
 const gameTagsInput = $("game-tags");
 const gamePriorityInput = $("game-priority");
+const gameEstHoursInput = $("game-est-hours");
 const editDeleteBtn = $("edit-delete-btn");
 
 const detailBackdrop = $("detail-modal-backdrop");
@@ -64,8 +79,16 @@ const detailTitle = $("detail-title");
 const detailMeta = $("detail-meta");
 const detailStars = $("detail-stars");
 const detailTags = $("detail-tags");
+const detailChecklist = $("detail-checklist");
 const detailSessions = $("detail-sessions");
 const detailMemories = $("detail-memories");
+
+const steamBackdrop = $("steam-modal-backdrop");
+const steamPasteInput = $("steam-paste");
+
+const yearBackdrop = $("year-modal-backdrop");
+const yearModalTitle = $("year-modal-title");
+const yearReviewBody = $("year-review-body");
 
 const toastEl = $("toast");
 
@@ -178,18 +201,18 @@ watchAuth((user) => {
   if (user) {
     signedOutEl.hidden = true;
     appEl.hidden = false;
-    loadingBanner.hidden = false;
+    loadingSkeleton.hidden = false;
     userAvatar.src = user.photoURL || "";
     userName.textContent = user.displayName || user.email || "";
     unsubscribeGames = watchGames(
       user.uid,
       (list) => {
         games = list;
-        loadingBanner.hidden = true;
+        loadingSkeleton.hidden = true;
         renderAll();
       },
       (err) => {
-        loadingBanner.hidden = true;
+        loadingSkeleton.hidden = true;
         showToast(`Sync error: ${err.message}`);
       }
     );
@@ -252,6 +275,9 @@ function renderStats() {
     }
   }
 
+  const estimated = games.filter((g) => g.status === "backlog" && typeof g.estimatedHours === "number");
+  const hoursLeft = estimated.reduce((s, g) => s + g.estimatedHours, 0);
+
   const tiles = [
     { value: total, label: "Games tracked" },
     { value: backlog, label: "In backlog" },
@@ -261,6 +287,10 @@ function renderStats() {
     {
       value: bestValue ? `$${bestValue.perHour.toFixed(2)}/hr` : "—",
       label: bestValue ? `Best value: ${bestValue.title}` : "Best value",
+    },
+    {
+      value: estimated.length ? `${hoursLeft}h` : "—",
+      label: estimated.length < backlog ? `Backlog left (${estimated.length}/${backlog} estimated)` : "Backlog hours left",
     },
   ];
 
@@ -444,12 +474,89 @@ function renderFilterOptions() {
   });
 });
 
+function matchesSearch(g, search) {
+  if (!search) return true;
+  if (g.title.toLowerCase().includes(search)) return true;
+  if ((g.sessions || []).some((s) => (s.note || "").toLowerCase().includes(search))) return true;
+  if ((g.memories || []).some((m) => (m.note || "").toLowerCase().includes(search))) return true;
+  return false;
+}
+
+viewGridBtn.addEventListener("click", () => setLibraryView("grid"));
+viewListBtn.addEventListener("click", () => setLibraryView("list"));
+
+function setLibraryView(view) {
+  filters.view = view;
+  viewGridBtn.classList.toggle("active", view === "grid");
+  viewListBtn.classList.toggle("active", view === "list");
+  gameGrid.hidden = view !== "grid";
+  gameTableWrap.hidden = view !== "list";
+  renderLibrary();
+}
+
+selectModeBtn.addEventListener("click", () => {
+  selectMode = !selectMode;
+  selectModeBtn.textContent = selectMode ? "Cancel" : "Select";
+  selectModeBtn.classList.toggle("btn-primary", selectMode);
+  if (!selectMode) selectedIds.clear();
+  renderLibrary();
+});
+
+function updateBulkBar() {
+  bulkBar.hidden = selectedIds.size === 0;
+  bulkCount.textContent = `${selectedIds.size} selected`;
+}
+
+bulkTagBtn.addEventListener("click", async () => {
+  const tag = bulkTagInput.value.trim();
+  if (!tag) return;
+  try {
+    await Promise.all(
+      [...selectedIds].map((id) => {
+        const g = games.find((x) => x.id === id);
+        const tags = new Set(g?.tags || []);
+        tags.add(tag);
+        return saveGame(currentUser.uid, { id, tags: [...tags] });
+      })
+    );
+    bulkTagInput.value = "";
+    showToast("Tag added.");
+  } catch (e) {
+    showToast(`Couldn't add tag: ${e.message}`);
+  }
+});
+
+bulkStatusSelect.addEventListener("change", async () => {
+  const status = bulkStatusSelect.value;
+  if (!status) return;
+  try {
+    await Promise.all([...selectedIds].map((id) => saveGame(currentUser.uid, { id, status })));
+    showToast("Status updated.");
+  } catch (e) {
+    showToast(`Couldn't update status: ${e.message}`);
+  } finally {
+    bulkStatusSelect.value = "";
+  }
+});
+
+bulkDeleteBtn.addEventListener("click", async () => {
+  if (!confirm(`Delete ${selectedIds.size} game${selectedIds.size === 1 ? "" : "s"}? This can't be undone.`)) return;
+  try {
+    await Promise.all([...selectedIds].map((id) => deleteGame(currentUser.uid, id)));
+    selectedIds.clear();
+    showToast("Deleted.");
+  } catch (e) {
+    showToast(`Delete failed: ${e.message}`);
+  }
+});
+
 let currentLibraryList = [];
 let draggedId = null;
 
 function renderLibrary() {
+  const search = filters.search;
   let list = games.filter((g) => {
-    if (filters.search && !g.title.toLowerCase().includes(filters.search)) return false;
+    if (!matchesSearch(g, search)) return false;
     if (filters.status !== "all" && g.status !== filters.status) return false;
     if (filters.platform !== "all" && g.platform !== filters.platform) return false;
     if (filters.tag !== "all" && !(g.tags || []).includes(filters.tag)) return false;
@@ -466,20 +573,31 @@ function renderLibrary() {
   list.sort(sorters[filters.sort] || sorters["added-desc"]);
   currentLibraryList = list;
 
-  const reorderable = filters.sort === "priority-asc" && list.length > 1;
+  const reorderable = filters.sort === "priority-asc" && list.length > 1 && filters.view === "grid" && !selectMode;
   reorderHint.hidden = !reorderable;
   gameGrid.classList.toggle("reorderable", reorderable);
 
   libraryEmpty.hidden = list.length > 0;
+  updateBulkBar();
+
+  if (filters.view === "list") {
+    renderLibraryTable(list);
+    return;
+  }
+
   gameGrid.innerHTML = list
-    .map((g) => {
+    .map((g, i) => {
       const ratingBadge = typeof g.rating === "number" ? `<span class="rating-badge">★ ${g.rating}/10</span>` : "";
       const tagRow = (g.tags || [])
         .slice(0, 3)
         .map((t) => `<span class="tag-pill">${escapeHtml(t)}</span>`)
         .join("");
+      const checkbox = selectMode
+        ? `<input type="checkbox" class="card-select" data-id="${g.id}" ${selectedIds.has(g.id) ? "checked" : ""} />`
+        : "";
       return `
-        <div class="game-card" data-id="${g.id}" ${reorderable ? 'draggable="true"' : ""}>
+        <div class="game-card" data-id="${g.id}" data-status="${escapeHtml(g.status)}" style="animation-delay:${Math.min(i, 12) * 25}ms" ${reorderable ? 'draggable="true"' : ""}>
+          ${checkbox}
           <div class="cover" style="${coverBackground(g)}">
             <span class="status-pill">${escapeHtml(g.status)}</span>
             <span class="platform-icon">${platformIcon(g.platform)}</span>
@@ -494,9 +612,24 @@ function renderLibrary() {
     })
     .join("");
 
+  gameGrid.querySelectorAll(".card-select").forEach((cb) => {
+    cb.addEventListener("click", (e) => e.stopPropagation());
+    cb.addEventListener("change", () => {
+      if (cb.checked) selectedIds.add(cb.dataset.id);
+      else selectedIds.delete(cb.dataset.id);
+      updateBulkBar();
+    });
+  });
+
   gameGrid.querySelectorAll(".game-card").forEach((el) => {
     el.addEventListener("click", () => {
       if (el.classList.contains("dragging")) return;
+      if (selectMode) {
+        const cb = el.querySelector(".card-select");
+        cb.checked = !cb.checked;
+        cb.dispatchEvent(new Event("change"));
+        return;
+      }
       openDetailModal(el.dataset.id);
     });
     if (!reorderable) return;
@@ -520,6 +653,52 @@ function renderLibrary() {
       const targetId = el.dataset.id;
       if (!draggedId || draggedId === targetId) return;
       await reorderBacklog(draggedId, targetId);
+    });
+  });
+}
+
+function renderLibraryTable(list) {
+  gameTableBody.innerHTML = list
+    .map((g) => {
+      const ratingCell = typeof g.rating === "number" ? `★ ${g.rating}/10` : "—";
+      const tagRow = (g.tags || [])
+        .slice(0, 3)
+        .map((t) => `<span class="tag-pill">${escapeHtml(t)}</span>`)
+        .join("");
+      const checkbox = selectMode
+        ? `<input type="checkbox" data-id="${g.id}" ${selectedIds.has(g.id) ? "checked" : ""} />`
+        : "";
+      return `
+        <tr data-id="${g.id}" data-status="${escapeHtml(g.status)}">
+          <td>${checkbox}</td>
+          <td><div class="row-cover" style="${coverBackground(g)}"></div></td>
+          <td>${escapeHtml(g.title)}</td>
+          <td>${escapeHtml(g.platform || "")}</td>
+          <td><span class="row-status">${escapeHtml(g.status)}</span></td>
+          <td>${escapeHtml(ratingCell)}</td>
+          <td><div class="tag-row">${tagRow}</div></td>
+        </tr>`;
+    })
+    .join("");
+
+  gameTableBody.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.addEventListener("click", (e) => e.stopPropagation());
+    cb.addEventListener("change", () => {
+      if (cb.checked) selectedIds.add(cb.dataset.id);
+      else selectedIds.delete(cb.dataset.id);
+      updateBulkBar();
+    });
+  });
+
+  gameTableBody.querySelectorAll("tr").forEach((row) => {
+    row.addEventListener("click", () => {
+      if (selectMode) {
+        const cb = row.querySelector('input[type="checkbox"]');
+        cb.checked = !cb.checked;
+        cb.dispatchEvent(new Event("change"));
+        return;
+      }
+      openDetailModal(row.dataset.id);
     });
   });
 }
@@ -568,6 +747,7 @@ function openEditModal(gameId) {
   gameAcquisitionInput.value = g?.acquisition || "owned";
   gameTagsInput.value = (g?.tags || []).join(", ");
   gamePriorityInput.value = g?.priority ?? "";
+  gameEstHoursInput.value = g?.estimatedHours ?? "";
 
   editBackdrop.hidden = false;
   gameTitleInput.focus();
@@ -627,9 +807,12 @@ $("edit-save-btn").addEventListener("click", async () => {
     acquisition: gameAcquisitionInput.value,
     tags: gameTagsInput.value.split(",").map((t) => t.trim()).filter(Boolean),
     priority: gamePriorityInput.value === "" ? null : Number(gamePriorityInput.value),
+    estimatedHours: gameEstHoursInput.value === "" ? null : Number(gameEstHoursInput.value),
     rating: existing?.rating ?? null,
     sessions: existing?.sessions || [],
     memories: existing?.memories || [],
+    checklist: existing?.checklist || { story: false, hundred: false, achievements: false },
+    steamAppId: existing?.steamAppId ?? null,
     dateAdded: existing?.dateAdded || Date.now(),
     dateStarted: existing?.dateStarted || null,
     dateCompleted: existing?.dateCompleted || null,
@@ -710,6 +893,18 @@ function renderDetail() {
 
   detailTags.innerHTML = (g.tags || []).map((t) => `<span class="tag-pill">${escapeHtml(t)}</span>`).join("");
 
+  const checklist = g.checklist || {};
+  detailChecklist.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+    cb.checked = Boolean(checklist[cb.dataset.key]);
+    cb.onchange = async () => {
+      try {
+        await saveGame(currentUser.uid, { id: g.id, checklist: { ...checklist, [cb.dataset.key]: cb.checked } });
+      } catch (e) {
+        showToast(`Couldn't save: ${e.message}`);
+      }
+    };
+  });
+
   const sessions = [...(g.sessions || [])].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   detailSessions.innerHTML = sessions.length
     ? sessions
@@ -763,3 +958,141 @@ $("memory-add-btn").addEventListener("click", async () => {
     showToast(`Couldn't save memory: ${e.message}`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Steam import
+// ---------------------------------------------------------------------------
+
+$("steam-import-btn").addEventListener("click", () => {
+  steamPasteInput.value = "";
+  steamBackdrop.hidden = false;
+});
+$("steam-modal-close").addEventListener("click", () => (steamBackdrop.hidden = true));
+$("steam-cancel-btn").addEventListener("click", () => (steamBackdrop.hidden = true));
+steamBackdrop.addEventListener("click", (e) => { if (e.target === steamBackdrop) steamBackdrop.hidden = true; });
+
+$("steam-import-confirm-btn").addEventListener("click", async () => {
+  let imported;
+  try {
+    imported = parseSteamLibrary(steamPasteInput.value.trim());
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
+
+  const existingAppIds = new Set(games.map((g) => g.steamAppId).filter(Boolean));
+  const toAdd = imported.filter((g) => !existingAppIds.has(g.steamAppId));
+  const skipped = imported.length - toAdd.length;
+
+  if (!toAdd.length) {
+    showToast(skipped ? "All of those are already in your library." : "No games found in that JSON.");
+    return;
+  }
+
+  try {
+    await Promise.all(
+      toAdd.map((g) => {
+        const sessions = g.playtimeMinutes > 0
+          ? [{ id: genId(), date: new Date().toISOString().slice(0, 10), minutes: g.playtimeMinutes, note: "Imported total playtime from Steam" }]
+          : [];
+        return saveGame(currentUser.uid, {
+          title: g.title,
+          platform: "PC",
+          status: "backlog",
+          tags: [],
+          pricePaid: null,
+          acquisition: "owned",
+          priority: null,
+          estimatedHours: null,
+          rating: null,
+          coverImage: g.coverImage,
+          steamAppId: g.steamAppId,
+          dateAdded: Date.now(),
+          dateStarted: null,
+          dateCompleted: null,
+          sessions,
+          memories: [],
+          checklist: { story: false, hundred: false, achievements: false },
+        });
+      })
+    );
+    showToast(`Imported ${toAdd.length} game${toAdd.length === 1 ? "" : "s"}${skipped ? ` (${skipped} already in your library)` : ""}.`);
+    steamBackdrop.hidden = true;
+  } catch (e) {
+    showToast(`Import failed: ${e.message}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Year in review
+// ---------------------------------------------------------------------------
+
+$("year-review-btn").addEventListener("click", () => {
+  renderYearReview(new Date().getFullYear());
+  yearBackdrop.hidden = false;
+});
+$("year-modal-close").addEventListener("click", () => (yearBackdrop.hidden = true));
+yearBackdrop.addEventListener("click", (e) => { if (e.target === yearBackdrop) yearBackdrop.hidden = true; });
+
+function renderYearReview(year) {
+  yearModalTitle.textContent = `${year} in review`;
+
+  const completed = games.filter(
+    (g) => g.status === "completed" && g.dateCompleted && new Date(g.dateCompleted).getFullYear() === year
+  );
+
+  const sessionsThisYear = games.flatMap((g) =>
+    (g.sessions || [])
+      .filter((s) => s.date && new Date(s.date).getFullYear() === year)
+      .map((s) => ({ ...s, game: g.title }))
+  );
+  const totalMinutes = sessionsThisYear.reduce((sum, s) => sum + (Number(s.minutes) || 0), 0);
+
+  const tagCounts = {};
+  for (const g of games) {
+    const touchedThisYear =
+      (g.dateCompleted && new Date(g.dateCompleted).getFullYear() === year) ||
+      (g.sessions || []).some((s) => s.date && new Date(s.date).getFullYear() === year);
+    if (!touchedThisYear) continue;
+    for (const t of g.tags || []) tagCounts[t] = (tagCounts[t] || 0) + 1;
+  }
+  const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  const ratedCompleted = completed.filter((g) => typeof g.rating === "number");
+  const topRated = [...ratedCompleted].sort((a, b) => b.rating - a.rating).slice(0, 5);
+
+  if (!completed.length && !sessionsThisYear.length) {
+    yearReviewBody.innerHTML = `<p class="year-empty">Nothing logged for ${year} yet — play something and come back!</p>`;
+    return;
+  }
+
+  yearReviewBody.innerHTML = `
+    <div class="year-hero">
+      <div class="big-number">${completed.length}</div>
+      <div class="caption">game${completed.length === 1 ? "" : "s"} completed · ${formatMinutes(totalMinutes)} played</div>
+    </div>
+    ${topRated.length ? `
+      <h3>Highest rated</h3>
+      <div class="year-list">
+        ${topRated.map((g) => `<div class="row"><span>${escapeHtml(g.title)}</span><span>★ ${g.rating}/10</span></div>`).join("")}
+      </div>
+    ` : ""}
+    ${topTags.length ? `
+      <h3 style="margin-top:16px">Most-played tags</h3>
+      <div class="year-list">
+        ${topTags.map(([t, c]) => `<div class="row"><span>${escapeHtml(t)}</span><span>${c} game${c === 1 ? "" : "s"}</span></div>`).join("")}
+      </div>
+    ` : ""}
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// PWA: service worker
+// ---------------------------------------------------------------------------
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("service-worker.js").catch(() => {});
+  });
+}
+
