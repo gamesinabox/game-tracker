@@ -2,30 +2,53 @@
   --bg: #0f1115;
   --bg-elevated: #171a21;
   --bg-card: #1c2029;
+  --bg-card-hover: #21262f;
   --border: #2a2f3a;
   --text: #e8eaed;
   --text-dim: #9aa0ac;
   --accent: #7c5cff;
+  --accent-rgb: 124, 92, 255;
+  --accent-bright: #9b81ff;
   --accent-dim: #4b3a99;
   --good: #3ecf8e;
   --warn: #f5a623;
   --bad: #ef5b5b;
   --radius: 10px;
   --shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  --font-body: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Space Grotesk", var(--font-body);
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     --bg: #f5f6f8;
     --bg-elevated: #ffffff;
     --bg-card: #ffffff;
+    --bg-card-hover: #f7f5ff;
     --border: #e2e4e9;
     --text: #1a1c22;
     --text-dim: #6b7280;
     --accent: #6b46f5;
+    --accent-rgb: 107, 70, 245;
+    --accent-bright: #5731e0;
     --accent-dim: #ece7fd;
     --shadow: 0 4px 16px rgba(20, 20, 30, 0.08);
   }
+}
+
+:root[data-theme="light"] {
+  --bg: #f5f6f8;
+  --bg-elevated: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f7f5ff;
+  --border: #e2e4e9;
+  --text: #1a1c22;
+  --text-dim: #6b7280;
+  --accent: #6b46f5;
+  --accent-rgb: 107, 70, 245;
+  --accent-bright: #5731e0;
+  --accent-dim: #ece7fd;
+  --shadow: 0 4px 16px rgba(20, 20, 30, 0.08);
 }
 
 * {
@@ -34,10 +57,15 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-body);
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
 }
 
 [hidden] {
@@ -60,17 +88,29 @@ button {
   gap: 20px;
   text-align: center;
   padding: 24px;
+  background:
+    radial-gradient(600px circle at 50% 20%, var(--accent-dim) 0%, transparent 60%),
+    var(--bg);
+  animation: fade-in 0.4s ease;
 }
 
 #signed-out h1 {
-  font-size: 2rem;
+  font-family: var(--font-display);
+  font-size: 2.4rem;
+  font-weight: 700;
   margin: 0;
+  letter-spacing: -0.02em;
 }
 
 #signed-out p {
   color: var(--text-dim);
   max-width: 360px;
   margin: 0;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .btn {
@@ -81,20 +121,36 @@ button {
   background: var(--bg-elevated);
   color: var(--text);
   border: 1px solid var(--border);
+  transition: border-color 0.15s ease, transform 0.1s ease, filter 0.15s ease, background-color 0.15s ease;
 }
 
 .btn:hover {
   border-color: var(--accent);
 }
 
+.btn:active {
+  transform: scale(0.97);
+}
+
 .btn-primary {
   background: var(--accent);
   color: white;
   border: none;
+  box-shadow: 0 2px 12px -4px var(--accent);
 }
 
 .btn-primary:hover {
   filter: brightness(1.08);
+}
+
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
 }
 
 .btn-danger {
@@ -120,9 +176,14 @@ header.topbar {
 }
 
 header.topbar h1 {
-  font-size: 1.15rem;
+  font-size: 1.3rem;
+  font-weight: 700;
   margin: 0;
-  letter-spacing: 0.2px;
+  letter-spacing: -0.01em;
+  background: linear-gradient(135deg, var(--text), var(--accent-bright));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .topbar-right {
@@ -163,9 +224,40 @@ nav.tabs button {
   font-weight: 600;
 }
 
+nav.tabs button {
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+nav.tabs button:hover {
+  color: var(--text);
+}
+
 nav.tabs button.active {
   color: var(--text);
   border-bottom-color: var(--accent);
+}
+
+.loading-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  padding: 10px;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 main {
@@ -178,12 +270,14 @@ main {
   display: flex;
   flex-direction: column;
   gap: 28px;
+  animation: fade-in 0.3s ease;
 }
 
 section h2 {
-  font-size: 1rem;
+  font-size: 0.82rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--text-dim);
   margin: 0 0 12px;
 }
@@ -201,10 +295,17 @@ section h2 {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px 16px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.stat-tile:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
 }
 
 .stat-tile .value {
-  font-size: 1.6rem;
+  font-family: var(--font-display);
+  font-size: 1.7rem;
   font-weight: 700;
 }
 
@@ -213,6 +314,36 @@ section h2 {
   font-size: 0.78rem;
   margin-top: 2px;
 }
+
+/* ---------- Play activity heatmap ---------- */
+
+.heatmap-wrap {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.heatmap {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.heatmap-week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.heatmap-day {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.heatmap-day[data-level="1"] { background: rgba(var(--accent-rgb), 0.3); }
+.heatmap-day[data-level="2"] { background: rgba(var(--accent-rgb), 0.55); }
+.heatmap-day[data-level="3"] { background: rgba(var(--accent-rgb), 0.78); }
+.heatmap-day[data-level="4"] { background: rgb(var(--accent-rgb)); }
 
 /* ---------- Spotlight (currently playing) ---------- */
 
@@ -231,6 +362,13 @@ section h2 {
   overflow: hidden;
   cursor: pointer;
   flex-shrink: 0;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.spotlight-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
 }
 
 .spotlight-card .cover {
@@ -325,14 +463,34 @@ section h2 {
   border-radius: var(--radius);
   overflow: hidden;
   cursor: pointer;
-  transition: transform 0.1s ease, border-color 0.1s ease;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
   display: flex;
   flex-direction: column;
 }
 
 .game-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.game-grid.reorderable .game-card {
+  cursor: grab;
+}
+
+.game-card.dragging {
+  opacity: 0.4;
+}
+
+.game-card.drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+
+.reorder-hint {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  margin: -10px 0 14px;
 }
 
 .game-card .cover {
@@ -411,12 +569,19 @@ section h2 {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: flex-start;
   justify-content: center;
   padding: 40px 16px;
   overflow-y: auto;
   z-index: 100;
+  animation: backdrop-in 0.15s ease;
+}
+
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .modal {
@@ -427,13 +592,19 @@ section h2 {
   width: 100%;
   padding: 22px;
   box-shadow: var(--shadow);
+  animation: modal-in 0.18s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .modal h2 {
   margin-top: 0;
   color: var(--text);
   text-transform: none;
-  font-size: 1.2rem;
+  font-size: 1.25rem;
 }
 
 .modal-close {
@@ -443,6 +614,24 @@ section h2 {
   color: var(--text-dim);
   font-size: 1.3rem;
   line-height: 1;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.modal-close:hover {
+  background: var(--bg-card);
+  color: var(--text);
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus,
+.filter-bar input:focus,
+.filter-bar select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .field {
@@ -557,7 +746,8 @@ section h2 {
 }
 
 .detail-title {
-  font-size: 1.25rem;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
   font-weight: 700;
   margin: 0 0 4px;
 }
@@ -580,6 +770,12 @@ section h2 {
   font-size: 1.2rem;
   color: var(--border);
   padding: 0;
+  transition: transform 0.1s ease, color 0.1s ease;
+}
+
+.rating-stars button:hover {
+  transform: scale(1.2);
+  color: var(--accent-bright);
 }
 
 .rating-stars button.filled {
@@ -660,4 +856,10 @@ section h2 {
   box-shadow: var(--shadow);
   font-size: 0.85rem;
   z-index: 200;
+  animation: toast-in 0.2s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }

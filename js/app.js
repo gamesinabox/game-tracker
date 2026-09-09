@@ -28,12 +28,17 @@ const userAvatar = $("user-avatar");
 const userName = $("user-name");
 
 const statGrid = $("stat-grid");
+const heatmapEl = $("heatmap");
+const heatmapEmpty = $("heatmap-empty");
 const spotlightRow = $("spotlight-row");
 const spotlightEmpty = $("spotlight-empty");
 const pickerResult = $("picker-result");
+const loadingBanner = $("loading-banner");
+const themeToggleBtn = $("theme-toggle");
 
 const gameGrid = $("game-grid");
 const libraryEmpty = $("library-empty");
+const reorderHint = $("reorder-hint");
 const filterSearch = $("filter-search");
 const filterStatus = $("filter-status");
 const filterPlatform = $("filter-platform");
@@ -127,6 +132,29 @@ function showToast(msg) {
 }
 
 // ---------------------------------------------------------------------------
+// Theme toggle
+// ---------------------------------------------------------------------------
+
+function effectiveTheme() {
+  const stored = localStorage.getItem("theme");
+  if (stored) return stored;
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  themeToggleBtn.textContent = theme === "dark" ? "☀️" : "🌙";
+}
+
+applyTheme(effectiveTheme());
+
+themeToggleBtn.addEventListener("click", () => {
+  const next = effectiveTheme() === "dark" ? "light" : "dark";
+  localStorage.setItem("theme", next);
+  applyTheme(next);
+});
+
+// ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
 
@@ -150,15 +178,20 @@ watchAuth((user) => {
   if (user) {
     signedOutEl.hidden = true;
     appEl.hidden = false;
+    loadingBanner.hidden = false;
     userAvatar.src = user.photoURL || "";
     userName.textContent = user.displayName || user.email || "";
     unsubscribeGames = watchGames(
       user.uid,
       (list) => {
         games = list;
+        loadingBanner.hidden = true;
         renderAll();
       },
-      (err) => showToast(`Sync error: ${err.message}`)
+      (err) => {
+        loadingBanner.hidden = true;
+        showToast(`Sync error: ${err.message}`);
+      }
     );
   } else {
     signedOutEl.hidden = false;
@@ -187,6 +220,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
 
 function renderAll() {
   renderStats();
+  renderHeatmap();
   renderSpotlight();
   renderFilterOptions();
   renderLibrary();
@@ -235,6 +269,59 @@ function renderStats() {
       (t) => `<div class="stat-tile"><div class="value">${escapeHtml(String(t.value))}</div><div class="label">${escapeHtml(t.label)}</div></div>`
     )
     .join("");
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard: play activity heatmap
+// ---------------------------------------------------------------------------
+
+function heatLevel(minutes) {
+  if (!minutes) return 0;
+  if (minutes <= 30) return 1;
+  if (minutes <= 90) return 2;
+  if (minutes <= 180) return 3;
+  return 4;
+}
+
+function renderHeatmap() {
+  const minutesByDate = {};
+  for (const g of games) {
+    for (const s of g.sessions || []) {
+      if (!s.date) continue;
+      minutesByDate[s.date] = (minutesByDate[s.date] || 0) + (Number(s.minutes) || 0);
+    }
+  }
+
+  const hasAny = Object.keys(minutesByDate).length > 0;
+  heatmapEmpty.hidden = hasAny;
+  if (!hasAny) {
+    heatmapEl.innerHTML = "";
+    return;
+  }
+
+  const WEEKS = 20;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  // Start on the Sunday that begins the (WEEKS-1)-th week before this week,
+  // so the grid ends on the Saturday of the current week (today always included).
+  const start = new Date(today);
+  start.setDate(start.getDate() - today.getDay() - (WEEKS - 1) * 7);
+
+  let html = "";
+  const cursor = new Date(start);
+  for (let w = 0; w < WEEKS; w++) {
+    html += '<div class="heatmap-week">';
+    for (let d = 0; d < 7; d++) {
+      const key = cursor.toISOString().slice(0, 10);
+      const mins = minutesByDate[key] || 0;
+      const level = heatLevel(mins);
+      const label = mins ? `${key}: ${formatMinutes(mins)} played` : key;
+      html += `<div class="heatmap-day" data-level="${level}" title="${escapeHtml(label)}"></div>`;
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    html += "</div>";
+  }
+  heatmapEl.innerHTML = html;
 }
 
 // ---------------------------------------------------------------------------
@@ -357,6 +444,9 @@ function renderFilterOptions() {
   });
 });
 
+let currentLibraryList = [];
+let draggedId = null;
+
 function renderLibrary() {
   let list = games.filter((g) => {
     if (filters.search && !g.title.toLowerCase().includes(filters.search)) return false;
@@ -374,6 +464,11 @@ function renderLibrary() {
     "priority-asc": (a, b) => (a.priority ?? 999999) - (b.priority ?? 999999),
   };
   list.sort(sorters[filters.sort] || sorters["added-desc"]);
+  currentLibraryList = list;
+
+  const reorderable = filters.sort === "priority-asc" && list.length > 1;
+  reorderHint.hidden = !reorderable;
+  gameGrid.classList.toggle("reorderable", reorderable);
 
   libraryEmpty.hidden = list.length > 0;
   gameGrid.innerHTML = list
@@ -384,7 +479,7 @@ function renderLibrary() {
         .map((t) => `<span class="tag-pill">${escapeHtml(t)}</span>`)
         .join("");
       return `
-        <div class="game-card" data-id="${g.id}">
+        <div class="game-card" data-id="${g.id}" ${reorderable ? 'draggable="true"' : ""}>
           <div class="cover" style="${coverBackground(g)}">
             <span class="status-pill">${escapeHtml(g.status)}</span>
             <span class="platform-icon">${platformIcon(g.platform)}</span>
@@ -398,9 +493,51 @@ function renderLibrary() {
         </div>`;
     })
     .join("");
-  gameGrid.querySelectorAll(".game-card").forEach((el) =>
-    el.addEventListener("click", () => openDetailModal(el.dataset.id))
-  );
+
+  gameGrid.querySelectorAll(".game-card").forEach((el) => {
+    el.addEventListener("click", () => {
+      if (el.classList.contains("dragging")) return;
+      openDetailModal(el.dataset.id);
+    });
+    if (!reorderable) return;
+
+    el.addEventListener("dragstart", () => {
+      draggedId = el.dataset.id;
+      el.classList.add("dragging");
+    });
+    el.addEventListener("dragend", () => {
+      el.classList.remove("dragging");
+      gameGrid.querySelectorAll(".drag-over").forEach((n) => n.classList.remove("drag-over"));
+    });
+    el.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (el.dataset.id !== draggedId) el.classList.add("drag-over");
+    });
+    el.addEventListener("dragleave", () => el.classList.remove("drag-over"));
+    el.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      el.classList.remove("drag-over");
+      const targetId = el.dataset.id;
+      if (!draggedId || draggedId === targetId) return;
+      await reorderBacklog(draggedId, targetId);
+    });
+  });
+}
+
+async function reorderBacklog(fromId, toId) {
+  const order = currentLibraryList.map((g) => g.id);
+  const fromIdx = order.indexOf(fromId);
+  const toIdx = order.indexOf(toId);
+  if (fromIdx === -1 || toIdx === -1) return;
+  order.splice(toIdx, 0, order.splice(fromIdx, 1)[0]);
+
+  try {
+    await Promise.all(
+      order.map((id, i) => saveGame(currentUser.uid, { id, priority: i }))
+    );
+  } catch (e) {
+    showToast(`Couldn't save new order: ${e.message}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

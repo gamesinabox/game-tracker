@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Backlog</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -19,6 +22,7 @@
       <h1>Backlog</h1>
       <div class="topbar-right">
         <button class="btn btn-primary" id="add-game-btn">+ Add game</button>
+        <button class="btn icon-btn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme"></button>
         <div class="user-chip">
           <img id="user-avatar" alt="" />
           <span id="user-name"></span>
@@ -32,12 +36,24 @@
       <button class="tab-btn" data-tab="library">Library</button>
     </nav>
 
+    <div class="loading-banner" id="loading-banner">
+      <span class="spinner"></span> Loading your library…
+    </div>
+
     <main>
       <!-- ---------------- Dashboard ---------------- -->
       <section class="view" id="view-dashboard">
         <section>
           <h2>Stats</h2>
           <div class="stat-grid" id="stat-grid"></div>
+        </section>
+
+        <section>
+          <h2>Play activity</h2>
+          <div class="heatmap-wrap">
+            <div class="heatmap" id="heatmap"></div>
+          </div>
+          <p class="empty-hint" id="heatmap-empty" hidden>Log a session to start filling this in.</p>
         </section>
 
         <section>
@@ -91,6 +107,7 @@
             <option value="priority-asc">Backlog priority</option>
           </select>
         </div>
+        <p class="reorder-hint" id="reorder-hint" hidden>Drag cards to reorder your backlog priority.</p>
         <div class="game-grid" id="game-grid"></div>
         <p class="empty-hint" id="library-empty" hidden>No games match these filters yet.</p>
       </section>
