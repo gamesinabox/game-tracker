@@ -220,6 +220,7 @@ watchAuth((user) => {
     signedOutEl.hidden = false;
     appEl.hidden = true;
     games = [];
+    resetAppBackground();
   }
 });
 
@@ -245,8 +246,98 @@ function renderAll() {
   renderStats();
   renderHeatmap();
   renderSpotlight();
+  updateAppBackground();
   renderFilterOptions();
   renderLibrary();
+}
+
+// ---------------------------------------------------------------------------
+// Currently-playing quick actions (delete / mark playing / nominate #1)
+// ---------------------------------------------------------------------------
+
+async function quickDelete(id) {
+  const g = games.find((x) => x.id === id);
+  if (!g) return;
+  if (!confirm(`Delete "${g.title}"? This can't be undone.`)) return;
+  try {
+    await deleteGame(currentUser.uid, id);
+    showToast("Deleted.");
+  } catch (e) {
+    showToast(`Delete failed: ${e.message}`);
+  }
+}
+
+async function quickMarkPlaying(id) {
+  const g = games.find((x) => x.id === id);
+  if (!g) return;
+  try {
+    await saveGame(currentUser.uid, { id, status: "playing", dateStarted: g.dateStarted || Date.now() });
+    showToast(`${g.title} marked as playing.`);
+  } catch (e) {
+    showToast(`Couldn't update: ${e.message}`);
+  }
+}
+
+function getPrimaryPlayingGame() {
+  const playing = games.filter((g) => g.status === "playing");
+  if (!playing.length) return null;
+  return playing.find((g) => g.primary) || playing[0];
+}
+
+async function setPrimaryPlaying(id) {
+  const prev = games.find((g) => g.primary && g.id !== id);
+  try {
+    const tasks = [saveGame(currentUser.uid, { id, primary: true })];
+    if (prev) tasks.push(saveGame(currentUser.uid, { id: prev.id, primary: false }));
+    await Promise.all(tasks);
+  } catch (e) {
+    showToast(`Couldn't set background game: ${e.message}`);
+  }
+}
+
+// Binds click handlers for the delete / mark-playing / nominate-#1 buttons
+// rendered on both the library grid cards and the library table rows.
+function attachCardActions(root) {
+  root.querySelectorAll(".card-action-btn[data-action]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (btn.dataset.action === "delete") quickDelete(id);
+      else if (btn.dataset.action === "play") quickMarkPlaying(id);
+      else if (btn.dataset.action === "primary") setPrimaryPlaying(id);
+    });
+  });
+}
+
+let bgActiveLayer = "a";
+let lastBgKey = null;
+
+function resetAppBackground() {
+  lastBgKey = null;
+  bgActiveLayer = "a";
+  $("bg-layer-a").classList.remove("active");
+  $("bg-layer-b").classList.remove("active");
+}
+
+function updateAppBackground() {
+  const primary = getPrimaryPlayingGame();
+  const key = primary ? primary.coverImage || `hash:${primary.title}` : null;
+  if (key === lastBgKey) return;
+  lastBgKey = key;
+
+  const showing = bgActiveLayer === "a" ? $("bg-layer-a") : $("bg-layer-b");
+  const hidden = bgActiveLayer === "a" ? $("bg-layer-b") : $("bg-layer-a");
+
+  if (!primary) {
+    showing.classList.remove("active");
+    hidden.classList.remove("active");
+    return;
+  }
+
+  hidden.style.cssText = coverBackground(primary);
+  hidden.classList.add("active");
+  showing.classList.remove("active");
+  bgActiveLayer = bgActiveLayer === "a" ? "b" : "a";
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +452,7 @@ function renderHeatmap() {
 function renderSpotlight() {
   const playing = games.filter((g) => g.status === "playing");
   spotlightEmpty.hidden = playing.length > 0;
+  const primaryId = getPrimaryPlayingGame()?.id;
   spotlightRow.innerHTML = playing
     .map((g) => {
       const sessions = g.sessions || [];
@@ -369,9 +461,12 @@ function renderSpotlight() {
       const metaLine = last
         ? `${stale ? '<span class="stale-flag">⚠ stale — </span>' : ""}last played ${escapeHtml(last.date)}`
         : "no sessions logged yet";
+      const isPrimary = g.id === primaryId;
       return `
         <div class="spotlight-card" data-id="${g.id}">
-          <div class="cover" style="${coverBackground(g)}"></div>
+          <div class="cover" style="${coverBackground(g)}">
+            <button class="card-action-btn ${isPrimary ? "active" : ""}" data-action="primary" data-id="${g.id}" title="${isPrimary ? "This game is the app background" : "Set as #1 — app background"}">${isPrimary ? "★" : "☆"}</button>
+          </div>
           <div class="body">
             <div class="title">${escapeHtml(g.title)}</div>
             <div class="meta">${metaLine}</div>
@@ -382,6 +477,7 @@ function renderSpotlight() {
   spotlightRow.querySelectorAll(".spotlight-card").forEach((el) =>
     el.addEventListener("click", () => openDetailModal(el.dataset.id))
   );
+  attachCardActions(spotlightRow);
 }
 
 // ---------------------------------------------------------------------------
@@ -585,6 +681,8 @@ function renderLibrary() {
     return;
   }
 
+  const primaryId = getPrimaryPlayingGame()?.id;
+
   gameGrid.innerHTML = list
     .map((g, i) => {
       const ratingBadge = typeof g.rating === "number" ? `<span class="rating-badge">★ ${g.rating}/10</span>` : "";
@@ -595,12 +693,20 @@ function renderLibrary() {
       const checkbox = selectMode
         ? `<input type="checkbox" class="card-select" data-id="${g.id}" ${selectedIds.has(g.id) ? "checked" : ""} />`
         : "";
+      const isPrimary = g.id === primaryId;
+      const statusAction = g.status === "playing"
+        ? `<button class="card-action-btn ${isPrimary ? "active" : ""}" data-action="primary" data-id="${g.id}" title="${isPrimary ? "This game is the app background" : "Set as #1 — app background"}">${isPrimary ? "★" : "☆"}</button>`
+        : `<button class="card-action-btn" data-action="play" data-id="${g.id}" title="Mark as currently playing">▶</button>`;
       return `
         <div class="game-card" data-id="${g.id}" data-status="${escapeHtml(g.status)}" style="animation-delay:${Math.min(i, 12) * 25}ms" ${reorderable ? 'draggable="true"' : ""}>
           ${checkbox}
           <div class="cover" style="${coverBackground(g)}">
             <span class="status-pill">${escapeHtml(g.status)}</span>
             <span class="platform-icon">${platformIcon(g.platform)}</span>
+            <div class="card-actions">
+              ${statusAction}
+              <button class="card-action-btn" data-action="delete" data-id="${g.id}" title="Delete">🗑</button>
+            </div>
           </div>
           <div class="body">
             <div class="title">${escapeHtml(g.title)}</div>
@@ -611,6 +717,8 @@ function renderLibrary() {
         </div>`;
     })
     .join("");
+
+  attachCardActions(gameGrid);
 
   gameGrid.querySelectorAll(".card-select").forEach((cb) => {
     cb.addEventListener("click", (e) => e.stopPropagation());
@@ -658,6 +766,8 @@ function renderLibrary() {
 }
 
 function renderLibraryTable(list) {
+  const primaryId = getPrimaryPlayingGame()?.id;
+
   gameTableBody.innerHTML = list
     .map((g) => {
       const ratingCell = typeof g.rating === "number" ? `★ ${g.rating}/10` : "—";
@@ -668,6 +778,10 @@ function renderLibraryTable(list) {
       const checkbox = selectMode
         ? `<input type="checkbox" data-id="${g.id}" ${selectedIds.has(g.id) ? "checked" : ""} />`
         : "";
+      const isPrimary = g.id === primaryId;
+      const statusAction = g.status === "playing"
+        ? `<button class="card-action-btn ${isPrimary ? "active" : ""}" data-action="primary" data-id="${g.id}" title="${isPrimary ? "This game is the app background" : "Set as #1 — app background"}">${isPrimary ? "★" : "☆"}</button>`
+        : `<button class="card-action-btn" data-action="play" data-id="${g.id}" title="Mark as currently playing">▶</button>`;
       return `
         <tr data-id="${g.id}" data-status="${escapeHtml(g.status)}">
           <td>${checkbox}</td>
@@ -677,9 +791,17 @@ function renderLibraryTable(list) {
           <td><span class="row-status">${escapeHtml(g.status)}</span></td>
           <td>${escapeHtml(ratingCell)}</td>
           <td><div class="tag-row">${tagRow}</div></td>
+          <td>
+            <div class="row-actions">
+              ${statusAction}
+              <button class="card-action-btn" data-action="delete" data-id="${g.id}" title="Delete">🗑</button>
+            </div>
+          </td>
         </tr>`;
     })
     .join("");
+
+  attachCardActions(gameTableBody);
 
   gameTableBody.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
     cb.addEventListener("click", (e) => e.stopPropagation());
@@ -818,6 +940,7 @@ $("edit-save-btn").addEventListener("click", async () => {
     dateCompleted: existing?.dateCompleted || null,
     coverImage: editingRawgPick?.coverImage ?? existing?.coverImage ?? null,
     rawgId: editingRawgPick?.rawgId ?? existing?.rawgId ?? null,
+    primary: status === "playing" ? (existing?.primary ?? false) : false,
   };
 
   if (status === "playing" && !data.dateStarted) data.dateStarted = Date.now();
