@@ -317,6 +317,7 @@ section h2 {
   letter-spacing: 0.08em;
   color: var(--text-dim);
   margin: 0 0 12px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
 }
 
 /* ---------- Stat tiles ---------- */
