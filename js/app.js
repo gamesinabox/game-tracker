@@ -1,6 +1,7 @@
 import { auth, watchAuth, signIn, signOutUser, watchGames, saveGame, deleteGame } from "./firebase.js";
 import { searchGames, rawgConfigured } from "./rawg.js";
 import { parseSteamLibrary } from "./steam.js";
+import { parsePlaystationLibrary } from "./playstation.js";
 
 // ---------------------------------------------------------------------------
 // State
@@ -85,6 +86,9 @@ const detailMemories = $("detail-memories");
 
 const steamBackdrop = $("steam-modal-backdrop");
 const steamPasteInput = $("steam-paste");
+
+const psnBackdrop = $("psn-modal-backdrop");
+const psnPasteInput = $("psn-paste");
 
 const yearBackdrop = $("year-modal-backdrop");
 const yearModalTitle = $("year-modal-title");
@@ -1141,6 +1145,70 @@ $("steam-import-confirm-btn").addEventListener("click", async () => {
     );
     showToast(`Imported ${toAdd.length} game${toAdd.length === 1 ? "" : "s"}${skipped ? ` (${skipped} already in your library)` : ""}.`);
     steamBackdrop.hidden = true;
+  } catch (e) {
+    showToast(`Import failed: ${e.message}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PlayStation import
+// ---------------------------------------------------------------------------
+
+$("psn-import-btn").addEventListener("click", () => {
+  psnPasteInput.value = "";
+  psnBackdrop.hidden = false;
+});
+$("psn-modal-close").addEventListener("click", () => (psnBackdrop.hidden = true));
+$("psn-cancel-btn").addEventListener("click", () => (psnBackdrop.hidden = true));
+psnBackdrop.addEventListener("click", (e) => { if (e.target === psnBackdrop) psnBackdrop.hidden = true; });
+
+$("psn-import-confirm-btn").addEventListener("click", async () => {
+  let imported;
+  try {
+    imported = parsePlaystationLibrary(psnPasteInput.value.trim());
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
+
+  const existingIds = new Set(games.map((g) => g.psnTitleId).filter(Boolean));
+  const toAdd = imported.filter((g) => !existingIds.has(g.psnTitleId));
+  const skipped = imported.length - toAdd.length;
+
+  if (!toAdd.length) {
+    showToast(skipped ? "All of those are already in your library." : "No games found in that JSON.");
+    return;
+  }
+
+  try {
+    await Promise.all(
+      toAdd.map((g) => {
+        const sessions = g.playtimeMinutes > 0
+          ? [{ id: genId(), date: g.lastPlayedDate || new Date().toISOString().slice(0, 10), minutes: g.playtimeMinutes, note: "Imported total playtime from PlayStation" }]
+          : [];
+        return saveGame(currentUser.uid, {
+          title: g.title,
+          platform: g.platform,
+          status: "backlog",
+          tags: [],
+          pricePaid: null,
+          acquisition: "owned",
+          priority: null,
+          estimatedHours: null,
+          rating: null,
+          coverImage: g.coverImage,
+          psnTitleId: g.psnTitleId,
+          dateAdded: Date.now(),
+          dateStarted: null,
+          dateCompleted: null,
+          sessions,
+          memories: [],
+          checklist: { story: false, hundred: false, achievements: false },
+        });
+      })
+    );
+    showToast(`Imported ${toAdd.length} game${toAdd.length === 1 ? "" : "s"}${skipped ? ` (${skipped} already in your library)` : ""}.`);
+    psnBackdrop.hidden = true;
   } catch (e) {
     showToast(`Import failed: ${e.message}`);
   }
