@@ -1121,6 +1121,45 @@ tr[data-status="shelved"] { --status-color: var(--warn); }
   accent-color: var(--accent);
 }
 
+.trophy-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 0.85rem;
+}
+
+.trophy-count.platinum { color: var(--accent-bright); }
+.trophy-count.gold { color: #e0b84b; }
+.trophy-count.silver { color: #b9c1cc; }
+.trophy-count.bronze { color: #c77f4a; }
+
+.trophy-progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.trophy-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-bright));
+}
+
+.trophy-progress-label {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.trophy-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
 .steam-steps {
   font-size: 0.85rem;
   color: var(--text-dim);
