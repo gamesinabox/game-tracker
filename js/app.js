@@ -1236,13 +1236,14 @@ $("psn-import-confirm-btn").addEventListener("click", async () => {
 
   const existingByPsnId = new Map(games.filter((g) => g.psnTitleId).map((g) => [g.psnTitleId, g]));
   const toAdd = imported.filter((g) => !existingByPsnId.has(g.psnTitleId));
-  // Games already in the library get a lightweight trophy-only update instead of being skipped
-  // outright — lets re-running the import (e.g. after psn-export.js learns to fetch trophies)
-  // backfill new data without re-adding or touching anything else about the game.
-  const toUpdateTrophies = imported.filter((g) => existingByPsnId.has(g.psnTitleId) && g.trophies);
+  // Games already in the library get a lightweight refresh (title/cover/trophies) instead of being
+  // skipped outright — lets re-running the import backfill new data (like trophies, once
+  // psn-export.js started fetching them) or corrected title/cover text without re-adding the game
+  // or touching anything the user has since edited (status, tags, rating, sessions, etc.).
+  const toRefresh = imported.filter((g) => existingByPsnId.has(g.psnTitleId));
   const skipped = imported.length - toAdd.length;
 
-  if (!toAdd.length && !toUpdateTrophies.length) {
+  if (!toAdd.length && !toRefresh.length) {
     showToast(skipped ? "All of those are already in your library." : "No games found in that JSON.");
     return;
   }
@@ -1274,13 +1275,18 @@ $("psn-import-confirm-btn").addEventListener("click", async () => {
           checklist: { story: false, hundred: false, achievements: false },
         });
       }),
-      ...toUpdateTrophies.map((g) =>
-        saveGame(currentUser.uid, { id: existingByPsnId.get(g.psnTitleId).id, trophies: g.trophies })
+      ...toRefresh.map((g) =>
+        saveGame(currentUser.uid, {
+          id: existingByPsnId.get(g.psnTitleId).id,
+          title: g.title,
+          coverImage: g.coverImage,
+          trophies: g.trophies,
+        })
       ),
     ]);
     const parts = [];
     if (toAdd.length) parts.push(`imported ${toAdd.length} new game${toAdd.length === 1 ? "" : "s"}`);
-    if (toUpdateTrophies.length) parts.push(`updated trophies on ${toUpdateTrophies.length}`);
+    if (toRefresh.length) parts.push(`refreshed ${toRefresh.length}`);
     showToast(parts.length ? `${parts.join(", ")}.` : "Nothing new to import.");
     psnBackdrop.hidden = true;
   } catch (e) {
