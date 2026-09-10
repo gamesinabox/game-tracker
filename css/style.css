@@ -236,11 +236,18 @@ header.topbar h1 {
   header.topbar {
     flex-direction: column;
     align-items: flex-start;
+    padding: 10px 16px;
+    row-gap: 8px;
   }
 
   .topbar-right {
     width: 100%;
     justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .user-chip span {
+    display: none;
   }
 }
 
