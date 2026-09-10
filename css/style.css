@@ -1253,8 +1253,14 @@ tr[data-status="shelved"] { --status-color: var(--warn); }
 
 .toolbar {
   display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
-  justify-content: flex-end;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.toolbar .btn {
+  flex-shrink: 0;
 }
 
 .hint {
