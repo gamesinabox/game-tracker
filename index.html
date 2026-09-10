@@ -105,6 +105,7 @@
           <div class="toolbar">
             <button class="btn" id="year-review-btn">📅 Year in review</button>
             <button class="btn" id="steam-import-btn">🎮 Import from Steam</button>
+            <button class="btn" id="psn-import-btn">🔷 Import from PlayStation</button>
             <button class="btn" id="export-btn">Export JSON</button>
             <button class="btn" id="import-btn">Import JSON</button>
             <input type="file" id="import-file" accept="application/json" hidden />
@@ -337,6 +338,36 @@
         <div class="right">
           <button class="btn" id="steam-cancel-btn">Cancel</button>
           <button class="btn btn-primary" id="steam-import-confirm-btn">Import</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------------- PlayStation import modal ---------------- -->
+  <div class="modal-backdrop" id="psn-modal-backdrop" hidden>
+    <div class="modal">
+      <button class="modal-close" id="psn-modal-close">&times;</button>
+      <h2>Import from PlayStation</h2>
+      <p class="hint">
+        Sony doesn't publish a public API, so this needs a small script run once on your computer:
+      </p>
+      <ol class="steam-steps">
+        <li>Log into <a href="https://playstation.com" target="_blank" rel="noopener">playstation.com</a>, then in the <strong>same browser</strong> visit <a href="https://ca.account.sony.com/api/v1/ssocookie" target="_blank" rel="noopener">ca.account.sony.com/api/v1/ssocookie</a> — it shows <code>{"npsso":"..."}</code>. Copy the token value (it expires in about an hour, so keep moving).</li>
+        <li>With <a href="https://nodejs.org" target="_blank" rel="noopener">Node.js</a> installed, download <a href="https://github.com/gamesinabox/game-tracker/blob/main/psn-export.js" target="_blank" rel="noopener">psn-export.js</a> from this app's repo and run:
+          <code id="psn-cmd-template">node psn-export.js YOUR_NPSSO_TOKEN</code>
+        </li>
+        <li>It writes <code>psn-library.json</code>. Open that file, copy its contents, and paste them below.</li>
+      </ol>
+      <div class="field">
+        <label for="psn-paste">Pasted PlayStation JSON</label>
+        <textarea id="psn-paste" rows="6" placeholder='{"titles":[...]}'></textarea>
+      </div>
+      <p class="hint">New games are added to your backlog with their PS5/PS4/PS3 platform and real playtime imported as one session. Games already in your library (matched by PlayStation title ID) are skipped. This uses an unofficial API — if it stops working, Sony likely changed something on their end.</p>
+      <div class="modal-actions">
+        <div></div>
+        <div class="right">
+          <button class="btn" id="psn-cancel-btn">Cancel</button>
+          <button class="btn btn-primary" id="psn-import-confirm-btn">Import</button>
         </div>
       </div>
     </div>

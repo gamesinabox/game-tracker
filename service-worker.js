@@ -1,4 +1,4 @@
-const CACHE = "backlog-shell-v7";
+const CACHE = "backlog-shell-v8";
 const SHELL_FILES = [
   "./",
   "index.html",
@@ -7,6 +7,7 @@ const SHELL_FILES = [
   "js/firebase.js",
   "js/rawg.js",
   "js/steam.js",
+  "js/playstation.js",
   "js/config.js",
   "icon.svg",
   "manifest.webmanifest",
