@@ -1,4 +1,4 @@
-const CACHE = "backlog-shell-v5";
+const CACHE = "backlog-shell-v6";
 const SHELL_FILES = [
   "./",
   "index.html",
