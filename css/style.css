@@ -234,20 +234,35 @@ header.topbar h1 {
 
 @media (max-width: 640px) {
   header.topbar {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 10px 16px;
-    row-gap: 8px;
+    padding: 10px 12px;
+    flex-wrap: nowrap;
+  }
+
+  header.topbar h1 {
+    font-size: 1.05rem;
   }
 
   .topbar-right {
-    width: 100%;
-    justify-content: flex-end;
-    gap: 8px;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  #add-game-btn {
+    padding: 8px 12px;
+  }
+
+  #add-game-btn .btn-label {
+    display: none;
   }
 
   .user-chip span {
     display: none;
+  }
+
+  #sign-out-btn {
+    padding: 8px 10px;
+    font-size: 0.78rem;
+    white-space: nowrap;
   }
 }
 
