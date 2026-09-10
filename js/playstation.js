@@ -25,6 +25,32 @@ function parseDurationMinutes(iso) {
   return hours * 60 + minutes + Math.round(seconds / 60);
 }
 
+// PSN's game list (titleId) and trophy list (npCommunicationId) use unrelated id systems with
+// no public crosswalk, so trophies are matched to games by normalized title name — best-effort,
+// not exact for every edge case (regional re-releases, demos, etc.).
+function normalizeName(name) {
+  return (name || "")
+    .toLowerCase()
+    .replace(/[™®©]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function trophiesFromTitle(t) {
+  if (!t) return null;
+  return {
+    bronze: t.earnedTrophies?.bronze || 0,
+    bronzeTotal: t.definedTrophies?.bronze || 0,
+    silver: t.earnedTrophies?.silver || 0,
+    silverTotal: t.definedTrophies?.silver || 0,
+    gold: t.earnedTrophies?.gold || 0,
+    goldTotal: t.definedTrophies?.gold || 0,
+    platinum: t.earnedTrophies?.platinum || 0,
+    platinumTotal: t.definedTrophies?.platinum || 0,
+    progress: t.progress || 0,
+  };
+}
+
 export function parsePlaystationLibrary(jsonText) {
   let data;
   try {
@@ -36,12 +62,23 @@ export function parsePlaystationLibrary(jsonText) {
   if (!Array.isArray(list)) {
     throw new Error('Expected a {"titles":[...]} object — the file psn-export.js writes.');
   }
-  return list.map((g) => ({
-    psnTitleId: g.titleId,
-    title: g.localizedName || g.name || `PlayStation title ${g.titleId}`,
-    coverImage: g.localizedImageUrl || g.imageUrl || null,
-    platform: platformFromCategory(g.category),
-    playtimeMinutes: parseDurationMinutes(g.playDuration),
-    lastPlayedDate: g.lastPlayedDateTime ? g.lastPlayedDateTime.slice(0, 10) : null,
-  }));
+
+  const trophiesByName = new Map();
+  for (const t of data?.trophyTitles || []) {
+    const key = normalizeName(t.trophyTitleName);
+    if (key && !trophiesByName.has(key)) trophiesByName.set(key, t);
+  }
+
+  return list.map((g) => {
+    const title = g.localizedName || g.name || `PlayStation title ${g.titleId}`;
+    return {
+      psnTitleId: g.titleId,
+      title,
+      coverImage: g.localizedImageUrl || g.imageUrl || null,
+      platform: platformFromCategory(g.category),
+      playtimeMinutes: parseDurationMinutes(g.playDuration),
+      lastPlayedDate: g.lastPlayedDateTime ? g.lastPlayedDateTime.slice(0, 10) : null,
+      trophies: trophiesFromTitle(trophiesByName.get(normalizeName(title))),
+    };
+  });
 }

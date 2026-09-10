@@ -250,6 +250,7 @@ function renderAll() {
   renderStats();
   renderHeatmap();
   renderSpotlight();
+  renderMostPlayed();
   updateAppBackground();
   renderFilterOptions();
   renderLibrary();
@@ -373,6 +374,17 @@ function renderStats() {
   const estimated = games.filter((g) => g.status === "backlog" && typeof g.estimatedHours === "number");
   const hoursLeft = estimated.reduce((s, g) => s + g.estimatedHours, 0);
 
+  const withTrophies = games.filter((g) => g.trophies);
+  const trophyTotals = withTrophies.reduce(
+    (s, g) => ({
+      platinum: s.platinum + g.trophies.platinum,
+      gold: s.gold + g.trophies.gold,
+      silver: s.silver + g.trophies.silver,
+      bronze: s.bronze + g.trophies.bronze,
+    }),
+    { platinum: 0, gold: 0, silver: 0, bronze: 0 }
+  );
+
   const tiles = [
     { value: total, label: "Games tracked" },
     { value: backlog, label: "In backlog" },
@@ -386,6 +398,12 @@ function renderStats() {
     {
       value: estimated.length ? `${hoursLeft}h` : "—",
       label: estimated.length < backlog ? `Backlog left (${estimated.length}/${backlog} estimated)` : "Backlog hours left",
+    },
+    {
+      value: withTrophies.length ? trophyTotals.platinum : "—",
+      label: withTrophies.length
+        ? `🏆 Platinums (${trophyTotals.gold + trophyTotals.silver + trophyTotals.bronze + trophyTotals.platinum} trophies total)`
+        : "Platinums",
     },
   ];
 
@@ -482,6 +500,32 @@ function renderSpotlight() {
     el.addEventListener("click", () => openDetailModal(el.dataset.id))
   );
   attachCardActions(spotlightRow);
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard: most played
+// ---------------------------------------------------------------------------
+
+function renderMostPlayed() {
+  const played = games
+    .map((g) => ({ game: g, minutes: gameMinutes(g) }))
+    .filter((x) => x.minutes > 0)
+    .sort((a, b) => b.minutes - a.minutes)
+    .slice(0, 8);
+
+  $("most-played-empty").hidden = played.length > 0;
+  $("most-played-list").innerHTML = played
+    .map(
+      ({ game, minutes }, i) => `
+        <div class="row" data-id="${game.id}" style="cursor:pointer">
+          <span>#${i + 1} ${escapeHtml(game.title)}</span>
+          <span>${formatMinutes(minutes)}</span>
+        </div>`
+    )
+    .join("");
+  $("most-played-list").querySelectorAll(".row").forEach((el) =>
+    el.addEventListener("click", () => openDetailModal(el.dataset.id))
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -669,6 +713,7 @@ function renderLibrary() {
     "rating-asc": (a, b) => (a.rating ?? 999) - (b.rating ?? 999),
     "title-asc": (a, b) => a.title.localeCompare(b.title),
     "priority-asc": (a, b) => (a.priority ?? 999999) - (b.priority ?? 999999),
+    "playtime-desc": (a, b) => gameMinutes(b) - gameMinutes(a),
   };
   list.sort(sorters[filters.sort] || sorters["added-desc"]);
   currentLibraryList = list;
@@ -690,6 +735,7 @@ function renderLibrary() {
   gameGrid.innerHTML = list
     .map((g, i) => {
       const ratingBadge = typeof g.rating === "number" ? `<span class="rating-badge">★ ${g.rating}/10</span>` : "";
+      const trophyBadge = g.trophies ? `<span class="trophy-badge">🏆 ${g.trophies.progress}%</span>` : "";
       const tagRow = (g.tags || [])
         .slice(0, 3)
         .map((t) => `<span class="tag-pill">${escapeHtml(t)}</span>`)
@@ -716,6 +762,7 @@ function renderLibrary() {
             <div class="title">${escapeHtml(g.title)}</div>
             <div class="sub">${escapeHtml(g.platform || "")}</div>
             ${ratingBadge}
+            ${trophyBadge}
             <div class="tag-row">${tagRow}</div>
           </div>
         </div>`;
@@ -1003,6 +1050,22 @@ function renderDetail() {
   const valueLine = g.pricePaid > 0 && mins > 0 ? ` · $${(g.pricePaid / (mins / 60)).toFixed(2)}/hr` : "";
   detailMeta.textContent = `${g.platform || "Unknown platform"} · ${g.status} · ${formatMinutes(mins)} played${valueLine}`;
 
+  const trophiesSection = $("detail-trophies-section");
+  trophiesSection.hidden = !g.trophies;
+  if (g.trophies) {
+    const t = g.trophies;
+    $("detail-trophies").innerHTML = `
+      <div class="trophy-counts">
+        <span class="trophy-count platinum" title="Platinum">🏆 ${t.platinum}/${t.platinumTotal}</span>
+        <span class="trophy-count gold" title="Gold">🥇 ${t.gold}/${t.goldTotal}</span>
+        <span class="trophy-count silver" title="Silver">🥈 ${t.silver}/${t.silverTotal}</span>
+        <span class="trophy-count bronze" title="Bronze">🥉 ${t.bronze}/${t.bronzeTotal}</span>
+      </div>
+      <div class="trophy-progress-track"><div class="trophy-progress-fill" style="width:${t.progress}%"></div></div>
+      <div class="trophy-progress-label">${t.progress}% complete</div>
+    `;
+  }
+
   detailStars.innerHTML = Array.from({ length: 10 }, (_, i) => i + 1)
     .map((n) => `<button data-n="${n}" class="${g.rating >= n ? "filled" : ""}">★</button>`)
     .join("");
@@ -1171,18 +1234,22 @@ $("psn-import-confirm-btn").addEventListener("click", async () => {
     return;
   }
 
-  const existingIds = new Set(games.map((g) => g.psnTitleId).filter(Boolean));
-  const toAdd = imported.filter((g) => !existingIds.has(g.psnTitleId));
+  const existingByPsnId = new Map(games.filter((g) => g.psnTitleId).map((g) => [g.psnTitleId, g]));
+  const toAdd = imported.filter((g) => !existingByPsnId.has(g.psnTitleId));
+  // Games already in the library get a lightweight trophy-only update instead of being skipped
+  // outright — lets re-running the import (e.g. after psn-export.js learns to fetch trophies)
+  // backfill new data without re-adding or touching anything else about the game.
+  const toUpdateTrophies = imported.filter((g) => existingByPsnId.has(g.psnTitleId) && g.trophies);
   const skipped = imported.length - toAdd.length;
 
-  if (!toAdd.length) {
+  if (!toAdd.length && !toUpdateTrophies.length) {
     showToast(skipped ? "All of those are already in your library." : "No games found in that JSON.");
     return;
   }
 
   try {
-    await Promise.all(
-      toAdd.map((g) => {
+    await Promise.all([
+      ...toAdd.map((g) => {
         const sessions = g.playtimeMinutes > 0
           ? [{ id: genId(), date: g.lastPlayedDate || new Date().toISOString().slice(0, 10), minutes: g.playtimeMinutes, note: "Imported total playtime from PlayStation" }]
           : [];
@@ -1198,6 +1265,7 @@ $("psn-import-confirm-btn").addEventListener("click", async () => {
           rating: null,
           coverImage: g.coverImage,
           psnTitleId: g.psnTitleId,
+          trophies: g.trophies,
           dateAdded: Date.now(),
           dateStarted: null,
           dateCompleted: null,
@@ -1205,9 +1273,15 @@ $("psn-import-confirm-btn").addEventListener("click", async () => {
           memories: [],
           checklist: { story: false, hundred: false, achievements: false },
         });
-      })
-    );
-    showToast(`Imported ${toAdd.length} game${toAdd.length === 1 ? "" : "s"}${skipped ? ` (${skipped} already in your library)` : ""}.`);
+      }),
+      ...toUpdateTrophies.map((g) =>
+        saveGame(currentUser.uid, { id: existingByPsnId.get(g.psnTitleId).id, trophies: g.trophies })
+      ),
+    ]);
+    const parts = [];
+    if (toAdd.length) parts.push(`imported ${toAdd.length} new game${toAdd.length === 1 ? "" : "s"}`);
+    if (toUpdateTrophies.length) parts.push(`updated trophies on ${toUpdateTrophies.length}`);
+    showToast(parts.length ? `${parts.join(", ")}.` : "Nothing new to import.");
     psnBackdrop.hidden = true;
   } catch (e) {
     showToast(`Import failed: ${e.message}`);
