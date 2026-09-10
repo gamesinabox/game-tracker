@@ -21,6 +21,7 @@ const BASIC_AUTH =
   "Basic MDk1MTUxNTktNzIzNy00MzcwLTliNDAtMzgwNmU2N2MwODkxOnVjUGprYTV0bnRCMktxc1A=";
 const REDIRECT_URI = "com.scee.psxandroid.scecompcall://redirect";
 const GAMES_URL = "https://m.np.playstation.com/api/gamelist/v2/users/me/titles";
+const TROPHY_TITLES_URL = "https://m.np.playstation.com/api/trophy/v1/users/me/trophyTitles";
 
 const npsso = process.argv[2];
 if (!npsso) {
@@ -102,6 +103,34 @@ async function fetchAllTitles(accessToken) {
   return titles;
 }
 
+async function fetchAllTrophyTitles(accessToken) {
+  const trophyTitles = [];
+  const limit = 800;
+  let offset = 0;
+  for (;;) {
+    const url = `${TROPHY_TITLES_URL}?limit=${limit}&offset=${offset}`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+    const data = await res.json();
+    if (!Array.isArray(data.trophyTitles)) {
+      throw new Error(
+        "Unexpected trophy response from PlayStation: " + JSON.stringify(data).slice(0, 300)
+      );
+    }
+    trophyTitles.push(...data.trophyTitles);
+    console.log(
+      `Fetched ${trophyTitles.length}${data.totalItemCount ? ` / ${data.totalItemCount}` : ""} trophy titles...`
+    );
+    if (!data.nextOffset || data.trophyTitles.length < limit) break;
+    offset = data.nextOffset;
+  }
+  return trophyTitles;
+}
+
 async function main() {
   console.log("Exchanging NPSSO for an access code...");
   const code = await exchangeNpssoForCode(npsso);
@@ -109,10 +138,12 @@ async function main() {
   const accessToken = await exchangeCodeForToken(code);
   console.log("Fetching your game library...");
   const titles = await fetchAllTitles(accessToken);
+  console.log("Fetching your trophies...");
+  const trophyTitles = await fetchAllTrophyTitles(accessToken);
 
   const fs = await import("node:fs");
-  fs.writeFileSync("psn-library.json", JSON.stringify({ titles }, null, 2));
-  console.log(`\nDone! Saved ${titles.length} games to psn-library.json`);
+  fs.writeFileSync("psn-library.json", JSON.stringify({ titles, trophyTitles }, null, 2));
+  console.log(`\nDone! Saved ${titles.length} games and ${trophyTitles.length} trophy titles to psn-library.json`);
   console.log(
     'Open that file, copy its contents, and paste them into the "Import from ' +
       'PlayStation" screen in the app.'

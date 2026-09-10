@@ -92,6 +92,12 @@
         </section>
 
         <section>
+          <h2>Most played</h2>
+          <div class="year-list" id="most-played-list"></div>
+          <p class="empty-hint" id="most-played-empty" hidden><span class="empty-icon">⏱️</span>Log some sessions (or import from Steam/PlayStation) to see your most-played games here.</p>
+        </section>
+
+        <section>
           <h2>What should I play next?</h2>
           <div class="picker-box">
             <div class="picker-result" id="picker-result">
@@ -137,6 +143,7 @@
             <option value="rating-asc">Lowest rated</option>
             <option value="title-asc">Title A–Z</option>
             <option value="priority-asc">Backlog priority</option>
+            <option value="playtime-desc">Most played</option>
           </select>
           <div class="view-toggle">
             <button class="btn icon-btn active" id="view-grid-btn" title="Grid view" aria-label="Grid view">▦</button>
@@ -279,6 +286,11 @@
       </div>
 
       <button class="btn" id="detail-edit-btn">Edit details</button>
+
+      <div class="subsection" id="detail-trophies-section" hidden>
+        <h3>Trophies</h3>
+        <div id="detail-trophies"></div>
+      </div>
 
       <div class="subsection">
         <h3>Completion</h3>
